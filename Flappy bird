@@ -1,0 +1,182 @@
+# flappy.py
+# Simple Flappy Bird clone using pygame. Single-file; no external assets.
+
+import sys
+import random
+import pygame
+
+# ---- Config ----
+WIDTH, HEIGHT = 400, 600
+FPS = 60
+GRAVITY = 0.45
+JUMP_VELOCITY = -9.5
+PIPE_GAP = 150
+PIPE_WIDTH = 70
+PIPE_INTERVAL = 1500  # milliseconds between pipes
+BIRD_SIZE = 30
+
+# ---- Init ----
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Flappy Bird - Simple")
+clock = pygame.time.Clock()
+font = pygame.font.SysFont(None, 36)
+bigfont = pygame.font.SysFont(None, 72)
+
+# ---- Helpers ----
+def draw_text(surf, text, size, x, y, center=True):
+    if size >= 50:
+        f = bigfont
+    else:
+        f = font
+    img = f.render(text, True, (255, 255, 255))
+    rect = img.get_rect()
+    if center:
+        rect.center = (x, y)
+    else:
+        rect.topleft = (x, y)
+    surf.blit(img, rect)
+
+# ---- Classes ----
+class Bird:
+    def __init__(self):
+        self.x = WIDTH * 0.2
+        self.y = HEIGHT / 2
+        self.vel = 0.0
+        self.rect = pygame.Rect(self.x, self.y, BIRD_SIZE, BIRD_SIZE)
+        self.angle = 0
+
+    def update(self, dt):
+        self.vel += GRAVITY * dt
+        self.y += self.vel * dt
+        self.rect.topleft = (self.x, self.y)
+        # angle for simple tilt effect
+        self.angle = max(-30, min(60, -self.vel * 3.5))
+
+    def flap(self):
+        self.vel = JUMP_VELOCITY
+
+    def draw(self, surf):
+        # draw a simple bird (circle + eye)
+        center = (int(self.x + BIRD_SIZE/2), int(self.y + BIRD_SIZE/2))
+        pygame.draw.ellipse(surf, (255, 220, 0), self.rect)  # body
+        eye_rect = pygame.Rect(0,0,6,6)
+        eye_rect.center = (center[0] + 6, center[1] - 4)
+        pygame.draw.rect(surf, (0,0,0), eye_rect)
+
+class Pipe:
+    def __init__(self, x):
+        self.x = x
+        # choose where the gap's top starts
+        self.gap_y = random.randrange(80, HEIGHT - 80 - PIPE_GAP)
+        self.passed = False
+
+    def update(self, dx):
+        self.x -= dx
+
+    def rects(self):
+        top = pygame.Rect(self.x, 0, PIPE_WIDTH, self.gap_y)
+        bottom = pygame.Rect(self.x, self.gap_y + PIPE_GAP, PIPE_WIDTH, HEIGHT - (self.gap_y + PIPE_GAP))
+        return top, bottom
+
+    def draw(self, surf):
+        top, bottom = self.rects()
+        pygame.draw.rect(surf, (34, 139, 34), top)    # green pipe
+        pygame.draw.rect(surf, (34, 139, 34), bottom)
+
+# ---- Game state ----
+def game_loop():
+    bird = Bird()
+    pipes = []
+    score = 0
+    speed = 160  # pixels per second; pipes move left at this speed
+    last_pipe_time = pygame.time.get_ticks()
+    running = True
+    game_over = False
+
+    while running:
+        dt = clock.tick(FPS) / (1000.0 / (1.0))  # dt as multiplier for physics (1 at 60 fps baseline)
+        # event handling
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    if game_over:
+                        # restart
+                        return True
+                    else:
+                        bird.flap()
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit(); sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    if game_over:
+                        return True
+                    else:
+                        bird.flap()
+
+        if not game_over:
+            # spawn pipes
+            now = pygame.time.get_ticks()
+            if now - last_pipe_time > PIPE_INTERVAL:
+                pipes.append(Pipe(WIDTH + 10))
+                last_pipe_time = now
+
+            # update bird
+            bird.update(dt)
+
+            # move pipes
+            for p in pipes:
+                p.update(speed * dt / FPS * (FPS / 60.0))  # normalized movement
+            # remove off-screen pipes
+            pipes = [p for p in pipes if p.x + PIPE_WIDTH > -10]
+
+            # collisions & scoring
+            bird_rect = pygame.Rect(bird.x, bird.y, BIRD_SIZE, BIRD_SIZE)
+            # ground and ceiling check
+            if bird.y + BIRD_SIZE >= HEIGHT or bird.y <= 0:
+                game_over = True
+
+            for p in pipes:
+                top_rect, bottom_rect = p.rects()
+                if bird_rect.colliderect(top_rect) or bird_rect.colliderect(bottom_rect):
+                    game_over = True
+                # scoring when passing a pipe
+                if not p.passed and p.x + PIPE_WIDTH < bird.x:
+                    p.passed = True
+                    score += 1
+
+        # ---- Drawing ----
+        screen.fill((135, 206, 235))  # sky blue
+        # simple ground
+        pygame.draw.rect(screen, (222, 184, 135), (0, HEIGHT - 40, WIDTH, 40))
+
+        # draw pipes
+        for p in pipes:
+            p.draw(screen)
+
+        # draw bird
+        bird.draw(screen)
+
+        # HUD
+        draw_text(screen, f"Score: {score}", 36, 10, 10, center=False)
+
+        if game_over:
+            draw_text(screen, "GAME OVER", 64, WIDTH/2, HEIGHT/2 - 40)
+            draw_text(screen, "Press SPACE or Click to restart", 24, WIDTH/2, HEIGHT/2 + 30)
+            draw_text(screen, f"Final Score: {score}", 36, WIDTH/2, HEIGHT/2 + 70)
+
+        pygame.display.flip()
+
+    return False
+
+# ---- Run ----
+def main():
+    while True:
+        restart = game_loop()
+        if not restart:
+            break
+
+if __name__ == "__main__":
+    main()
